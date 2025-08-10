@@ -135,6 +135,8 @@ create table if not exists accion (
     descripcion varchar(30) not null,
     id_denuncia int not null,
     id_funcionario_institucion int not null,
+    codigo_tipo_accion int not null,
+    descripcion_tipo_accion varchar (20) not null,
     
     constraint fk_id_denuncia
     foreign key (id_denuncia)
