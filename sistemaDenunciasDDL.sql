@@ -488,7 +488,7 @@ drop procedure sp_ActualizarEstadoDenuncia;
 delimiter $$
 create procedure sp_ActualizarEstadoDenuncia(
     in p_id_denuncia int, in cedula_funcionario char(10), in tipo_accion varchar(10),
-    in descripcion_accion varchar(50), in ruta_evidencia varchar(255)
+    in descripcion_accion varchar(50), in ruta_evidencia varchar(30)
 )
 begin 
     declare id_accion int;
