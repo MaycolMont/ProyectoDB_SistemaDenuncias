@@ -58,12 +58,12 @@ create table if not exists tCiudadano (
 create table if not exists tInstitucion (
 	id_institucion int primary key auto_increment not null,
     nombre varchar(30) not null,
-    descripcion varchar(50)
+    descripcion varchar(60)
 );
 
 create table if not exists tCorreo_institucion (
 	id_correo int primary key auto_increment,
-	correo varchar(20) not null unique,
+	correo varchar(30) not null unique,
 	id_institucion int not null,
     
     constraint fk_institucion
@@ -108,7 +108,7 @@ create table if not exists tFuncionario_institucion (
 
 create table if not exists tDenuncia (
 	id_denuncia int primary key auto_increment not null,
-    descripcion varchar(50),
+    descripcion varchar(80),
     tipo varchar(30),
     es_anonima boolean not null default false,
     estado enum('Revisión', 'Resuelta','Rechazada') not null,
@@ -164,14 +164,14 @@ create table if not exists tEvidencia_denuncia (
 
 create table if not exists tTipoAccion (
 	id_tipo_accion char(4) primary key not null,
-    descripcion varchar(30) not null
+    descripcion varchar(50) not null
 );
 
 create table if not exists tAccion (
 	id_accion int primary key auto_increment,
-    descripcion varchar(50) not null,
+    descripcion varchar(80) not null,
     id_denuncia int not null,
-    id_funcionario_institucion char(10) not null,
+    id_funcionario_institucion char(10), -- El sistema puede agregar una acción automáticamente, por ello puede ser null
     id_tipo_accion char(4) not null,
     
     constraint fk_id_denuncia_accion
@@ -484,12 +484,14 @@ select * from vCiudadanosActivos;
 
 
 -- Procedure para la actualización del Estado de una Denuncia --
+drop procedure sp_ActualizarEstadoDenuncia;
 delimiter $$
-create procedure sp_ActualizarEstadoDenuncia(in id_denuncia int, in cedula_funcionario char(10),
-    in tipo_accion varchar(10), in descripcion_accion varchar(50), in ruta_evidencia varchar(255)
+create procedure sp_ActualizarEstadoDenuncia(
+    in p_id_denuncia int, in cedula_funcionario char(10), in tipo_accion varchar(10),
+    in descripcion_accion varchar(50), in ruta_evidencia varchar(255)
 )
 begin 
-	declare id_accion int;
+    declare id_accion int;
     declare exit handler for sqlexception
     begin
         rollback;
@@ -499,7 +501,7 @@ begin
     start transaction;
 
     insert into tAccion (descripcion, id_denuncia, id_funcionario_institucion, id_tipo_accion)
-    values (descripcion_accion, id_denuncia, cedula_funcionario, tipo_accion);
+    values (descripcion_accion, p_id_denuncia, cedula_funcionario, tipo_accion);
     
     set id_accion = last_insert_id();
 
@@ -509,33 +511,38 @@ begin
     end if;
 
     update tDenuncia set estado = case 
-                when tipo_accion = 'CIE' then 'Resuelta'
-                when tipo_accion = 'RCH' then 'Rechazada'
-                else 'Revisión'
-            end,
+            when tipo_accion = 'CIE' then 'Resuelta'
+            when tipo_accion = 'RCH' then 'Rechazada'
+            else 'Revisión'
+        end,
         fecha_ultima_actualizacion = now()
-    where id_denuncia = id_denuncia;
+    where id_denuncia = p_id_denuncia; 
+    
     commit;
 end$$
 delimiter ;
 
 
+-- Trigger para insertar una acción inicial al registrarse una nueva denuncia --
+
 delimiter $$
-create trigger tgrAuditarEstadoDenuncia
-after update on tdenuncia for each row
+create trigger tgrRegistrarAccionInicial
+after insert on tDenuncia for each row
 begin
-    if old.estado != new.estado then
-        insert into tAccion (descripcion, id_denuncia, id_funcionario_institucion, id_tipo_accion)
-        values (
-            concat('estado de denuncia cambiado de ', old.estado, ' a ', new.estado),
-            new.id_denuncia,
-            (select a.id_funcionario_institucion from tAccion as a where a.id_denuncia = new.id_denuncia order by a.id_accion desc limit 1),
-            'ACT'
-        );
-    end if;
+    
+    insert into tAccion (descripcion, id_denuncia, id_funcionario_institucion, id_tipo_accion)
+    values (
+        'Denuncia recibida. En espera de ser asignada a un funcionario.',
+        new.id_denuncia,
+        null, -- El sistema agrega esta acción automáticamente, no un funcionario (por ello este campo puede ser null)
+        'RSP'
+    );
 end$$
 delimiter ;
 
 call sp_ActualizarEstadoDenuncia(1,'0967890123','VER','Se realizó una inspección visual en el sitio.', 
     'ruta/evidencia_inspeccion.jpg'    
 );
+
+insert into tDenuncia (descripcion, tipo, es_anonima, estado, fecha_inicio, fecha_fin, fecha_ultima_actualizacion, cedula_usuario) values
+('Quema de árboles', 'Ambiental', false, 'Revisión', '2025-08-15 11:45:00', NULL, '2024-08-15 11:45:00', '0912345678');
