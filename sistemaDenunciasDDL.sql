@@ -327,13 +327,13 @@ insert into tDireccion_denuncia (id_denuncia, parroquia, calle1, calle2, referen
 (1, 'Parroquia 1', 'Calle Principal', 'Calle Secundaria', 'Frente al parque'),
 (2, 'Parroquia 2', 'Avenida Central', 'Calle Lateral', 'Cerca de la farmacia'),
 (3, 'Parroquia 3', 'Calle del Árbol', 'Calle de la Flor', 'Junto al supermercado'),
-(4, 'Parroquia 4', 'Avenida del Sol', 'Calle de la Luna', 'Esquina con el semáforo'),
+(4, 'Parroquia 1', 'Avenida del Sol', 'Calle de la Luna', 'Esquina con el semáforo'),
 (5, 'Parroquia 5', 'Calle del Viento', 'Calle del Agua', 'Detrás del edificio'),
 (6, 'Parroquia 6', 'Calle del Fuego', 'Avenida del Humo', 'Junto a la ferretería'),
-(7, 'Parroquia 7', 'Avenida de la Paz', 'Calle de la Esperanza', 'Esquina con el hospital'),
-(8, 'Parroquia 8', 'Calle del Mar', 'Calle de la Tierra', 'Cerca del mercado'),
-(9, 'Parroquia 9', 'Avenida de las Montañas', 'Calle del Lago', 'Detrás del cine'),
-(10, 'Parroquia 10', 'Calle del Aire', 'Avenida de la Luz', 'Frente a la estación de policía');
+(7, 'Parroquia 1', 'Avenida de la Paz', 'Calle de la Esperanza', 'Esquina con el hospital'),
+(8, 'Parroquia 4', 'Calle del Mar', 'Calle de la Tierra', 'Cerca del mercado'),
+(9, 'Parroquia 2', 'Avenida de las Montañas', 'Calle del Lago', 'Detrás del cine'),
+(10, 'Parroquia 1', 'Calle del Aire', 'Avenida de la Luz', 'Frente a la estación de policía');
 
 -- Insertar datos en tVoto_denuncia_ciudadano
 insert into tVoto_denuncia_ciudadano (cedula_usuario, id_denuncia) values
@@ -484,41 +484,52 @@ select * from vCiudadanosActivos;
 
 
 -- Procedure para la actualización del Estado de una Denuncia --
-drop procedure sp_ActualizarEstadoDenuncia;
 delimiter $$
 create procedure sp_ActualizarEstadoDenuncia(
     in p_id_denuncia int, in cedula_funcionario char(10), in tipo_accion varchar(10),
-    in descripcion_accion varchar(50), in ruta_evidencia varchar(30)
+    in descripcion_accion varchar(50), in ruta_evidencia varchar(30), out mensaje_salida varchar(50)
 )
 begin 
     declare id_accion int;
+    -- Manejo de Errores de existencia de claves foráneas (cédula y tipo de acción)
+    declare exit handler for 1452
+    begin
+        rollback;
+        set mensaje_salida = 'Error: La cédula del funcionario o el tipo de acción no existen.';
+    end;
+    
+    -- Errores de tipo genérico
     declare exit handler for sqlexception
     begin
         rollback;
-        resignal;
+        set mensaje_salida = 'Ocurrió un error inesperado durante la transacción.';
     end;
+	if (select count(*) from tDenuncia where id_denuncia = p_id_denuncia) = 0 then
+        set mensaje_salida = 'Error: La denuncia especificada no existe.';
+    else
+		start transaction;
 
-    start transaction;
-
-    insert into tAccion (descripcion, id_denuncia, id_funcionario_institucion, id_tipo_accion)
-    values (descripcion_accion, p_id_denuncia, cedula_funcionario, tipo_accion);
+		insert into tAccion (descripcion, id_denuncia, id_funcionario_institucion, id_tipo_accion)
+		values (descripcion_accion, p_id_denuncia, cedula_funcionario, tipo_accion);
     
-    set id_accion = last_insert_id();
+		set id_accion = last_insert_id();
 
-    if ruta_evidencia is not null then
-        insert into tEvidencia_accion (tipo, ruta_archivo, id_accion)
-        values ('imagen', ruta_evidencia, id_accion);
-    end if;
+		if ruta_evidencia is not null then
+			insert into tEvidencia_accion (tipo, ruta_archivo, id_accion)
+			values ('imagen', ruta_evidencia, id_accion);
+		end if;
 
-    update tDenuncia set estado = case 
-            when tipo_accion = 'CIE' then 'Resuelta'
-            when tipo_accion = 'RCH' then 'Rechazada'
-            else 'Revisión'
-        end,
+		update tDenuncia set estado = case 
+				when tipo_accion = 'CIE' then 'Resuelta'
+				when tipo_accion = 'RCH' then 'Rechazada'
+				else 'Revisión'
+		end,
         fecha_ultima_actualizacion = now()
-    where id_denuncia = p_id_denuncia; 
+		where id_denuncia = p_id_denuncia; 
     
-    commit;
+		commit;
+        set mensaje_salida = 'Denuncia actualizada exitosamente.';
+    end if;
 end$$
 delimiter ;
 
@@ -540,9 +551,11 @@ begin
 end$$
 delimiter ;
 
-call sp_ActualizarEstadoDenuncia(1,'0967890123','VER','Se realizó una inspección visual en el sitio.', 
-    'ruta/evidencia_inspeccion.jpg'    
+call sp_ActualizarEstadoDenuncia(2,'0967890123','VER','Se realizó una inspección visual en el sitio.', 
+    'ruta/evidencia_inspeccion.jpg', @mensaje_salida    
 );
+select *, @mensaje_salida as resultado from tAccion where id_denuncia = 2;
+
 
 insert into tDenuncia (descripcion, tipo, es_anonima, estado, fecha_inicio, fecha_fin, fecha_ultima_actualizacion, cedula_usuario) values
 ('Quema de árboles', 'Ambiental', false, 'Revisión', '2025-08-15 11:45:00', NULL, '2024-08-15 11:45:00', '0912345678');
